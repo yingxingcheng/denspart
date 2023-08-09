@@ -26,52 +26,29 @@ from itertools import combinations
 import numpy as np
 
 from .cache import compute_cached
-from .mbis import connected_vertices
+from .mbis import connected_vertices, ExponentialFunction
 from .vh import BasisFunction, ProModel
 
 __all__ = ["GISAProModel"]
 
 
-class GaussianFunction(BasisFunction):
+class GaussianFunction(ExponentialFunction):
     """Gaussian basis function for the GISA pro density.
 
     See BasisFunction base class for API documentation.
     """
 
-    def __init__(self, iatom, center, pars, exponent):
-        self.exponent = exponent
-        if len(pars) != 1 and not (np.asarray(pars) >= 0).all():
-            raise TypeError("Expecting one positive parameter.")
-        super().__init__(iatom, center, pars, [(5e-5, 1e2)])
-
-    @property
-    def population(self):
-        return self.pars[0]
-
-    @property
-    def population_derivatives(self):
-        return np.array([1.0])
-
     def get_cutoff_radius(self, density_cutoff):
         if density_cutoff <= 0.0:
             return np.inf
-        population, exponent = self.pars[0], self.exponent
+        population, exponent = self.pars
         prefactor = population * (exponent / np.pi) ** 1.5
         if prefactor < 0 or prefactor < density_cutoff:
             return np.inf
         else:
             return np.sqrt((np.log(prefactor) - np.log(density_cutoff)) / exponent)
 
-    def _compute_dists(self, points, cache=None):
-        return compute_cached(
-            cache,
-            until="forever",
-            key=("dists", *self.center, len(points)),
-            func=(lambda: np.linalg.norm(points - self.center, axis=1)),
-        )
-
     def _compute_exp(self, exponent, dists, cache=None):
-        # print(exponent, np.max(dists**2), np.min(dists**2))
         return compute_cached(
             cache,
             until="end-ekld",
@@ -80,7 +57,7 @@ class GaussianFunction(BasisFunction):
         )
 
     def compute(self, points, cache=None):
-        population, exponent = self.pars[0], self.exponent
+        population, exponent = self.pars
         if exponent < 0 or population < 0:
             return np.full(len(points), np.inf)
         dists = self._compute_dists(points, cache)
@@ -89,23 +66,26 @@ class GaussianFunction(BasisFunction):
         return prefactor * exp
 
     def compute_derivatives(self, points, cache=None):
-        population, exponent = self.pars[0], self.exponent
+        population, exponent = self.pars
         if exponent < 0 or population < 0:
             warnings.warn("exponent or population is negative!", stacklevel=1)
             exponent = -exponent if exponent < 0 else exponent
             population = -population if population < 0 else population
+            # return np.full((2, len(points)), np.inf)
         dists = self._compute_dists(points, cache)
         exp = self._compute_exp(exponent, dists, cache)
         factor = (exponent / np.pi) ** 1.5
-        # vector = (population * exponent**2 / 8 / np.pi) * (3 - dists * exponent)
-        return np.array([factor * exp])
+        vector = (population * exponent**0.5 / np.pi**0.5) * (
+            1.5 / np.pi - dists**2 * exponent / np.pi
+        )
+        return np.array([factor * exp, vector * exp])
 
 
 class GISAProModel(ProModel):
-    """ProModel for MBIS partitioning."""
+    """ProModel for GISA partitioning."""
 
     @classmethod
-    def from_geometry(cls, atnums, atcoords):
+    def from_geometry(cls, atnums, atcoords, nshell_map=None):
         """Derive a ProModel with a sensible initial guess from a molecular geometry.
 
         Parameters
@@ -117,10 +97,8 @@ class GISAProModel(ProModel):
         """
         fns = []
         for iatom, (atnum, atcoord) in enumerate(zip(atnums, atcoords, strict=True)):
-            exponents = get_alpha(atnum)
-            populations = get_initial_population(atnum, exponents)
-            for population, exponent in zip(populations, exponents, strict=True):
-                fns.append(GaussianFunction(iatom, atcoord, [population], exponent))
+            for exponent, population in zip(*get_initial_gisa_paramters(atnum)):
+                fns.append(GaussianFunction(iatom, atcoord, [population, exponent]))
         return cls(atnums, atcoords, fns)
 
     def reduce(self, eps=1e-4):
@@ -152,7 +130,7 @@ class GISAProModel(ProModel):
                 population = sum(fn.population for fn in cluster)
                 exponent = sum(fn.exponent for fn in cluster) / len(cluster)
                 new_fns.append(
-                    GaussianFunction(iatom, pro_model.atcoords[iatom], [population], exponent)
+                    GaussianFunction(iatom, pro_model.atcoords[iatom], [population, exponent])
                 )
         return pro_model.__class__(pro_model.atnums, pro_model.atcoords, new_fns)
 
@@ -161,15 +139,14 @@ class GISAProModel(ProModel):
         results = super().to_dict()
         valence_charges = np.zeros(self.natom, dtype=float)
         valence_widths = np.zeros(self.natom, dtype=float)
-        core_charges = np.zeros(self.natom, dtype=float)
 
-        # for fn in self.fns:
-        #     width = 1 / fn.exponent
-        #     if width > valence_widths[fn.iatom]:
-        #         valence_widths[fn.iatom] = width
-        #         valence_charges[fn.iatom] = -fn.pars[0]
+        for fn in self.fns:
+            width = 1 / fn.pars[1]
+            if width > valence_widths[fn.iatom]:
+                valence_widths[fn.iatom] = width
+                valence_charges[fn.iatom] = -fn.pars[0]
 
-        # core_charges = self.charges - valence_charges
+        core_charges = self.charges - valence_charges
         results.update(
             {
                 "core_charges": core_charges,
@@ -191,21 +168,23 @@ class GISAProModel(ProModel):
         pars = data["propars"]
         atnfns = data["atnfns"]
         for iatom, atcoord in enumerate(atcoords):
-            exponents = get_alpha(atnums[iatom])
             for iprim in range(atnfns[iatom]):
-                fn_pars = pars[ipar]
-                fns.append(GaussianFunction(iatom, atcoord, [fn_pars], exponents[iprim]))
-                ipar += 1
+                fn_pars = pars[ipar : ipar + 2]
+                fns.append(GaussianFunction(iatom, atcoord, fn_pars))
+                ipar += 2
         return cls(atnums, atcoords, fns)
 
 
-def get_alpha(atnum):
+def get_initial_exponents(atnum):
     """The exponents used for primitive Gaussian functions of each element."""
     param_dict = {
+        # from GISA paper
         1: np.array([5.672, 1.505, 0.5308, 0.2204]),
         6: np.array([148.3, 42.19, 15.33, 6.146, 0.7846, 0.2511]),
         7: np.array([178.0, 52.42, 19.87, 1.276, 0.6291, 0.2857]),
         8: np.array([220.1, 65.66, 25.98, 1.685, 0.6860, 0.2311]),
+        # TODO: use KL-Divergence
+        # 1: np.array([7.00980687, 1.54699655, 0.51720230, 0.21248255]),
     }
     if atnum in param_dict:
         return param_dict[atnum]
@@ -213,6 +192,13 @@ def get_alpha(atnum):
         raise NotImplementedError
 
 
-def get_initial_population(atnum, exponents):
+def get_initial_populations(atnum, exponents):
     """Get initial population based on atomic number `atnum`."""
-    return np.ones_like(exponents) * atnum
+    return np.linspace(1, atnum, len(exponents))
+
+
+def get_initial_gisa_paramters(atnum):
+    """Get initial GISA parameters based on atomic number `atnum`."""
+    exponents = get_initial_exponents(atnum)
+    populations = get_initial_populations(atnum, exponents)
+    return exponents, populations
