@@ -408,14 +408,16 @@ class ProModel(metaclass=ProModelMeta):
 
     def pprint(self):
         """Print a table with the pro-parameters."""
-        print(" ifn iatom  atn       parameters...")
+        print(" ifn iatom  atn       exponent    parameters...")
         for ifn, fn in enumerate(self.fns):
+            out = [fn.exponent]
+            out.extend(fn.pars)
             print(
                 "{:4d}  {:4d}  {:3d}  {:s}".format(
                     ifn,
                     fn.iatom,
                     self.atnums[fn.iatom],
-                    " ".join(format(par, "15.8f") for par in fn.pars),
+                    " ".join(format(par, "15.8f") for par in out),
                 )
             )
 

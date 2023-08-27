@@ -123,7 +123,7 @@ class GISAProModel(ProModel):
                 fns.append(GaussianFunction(iatom, atcoord, [population], exponent))
         return cls(atnums, atcoords, fns)
 
-    def reduce(self, eps=1e-4):
+    def reduce(self, eps=1e-2):
         """Return a new ProModel in which redundant functions are merged together.
 
         Parameters
@@ -203,9 +203,55 @@ def get_alpha(atnum):
     """The exponents used for primitive Gaussian functions of each element."""
     param_dict = {
         1: np.array([5.672, 1.505, 0.5308, 0.2204]),
+        3: np.array([60.3528, 14.895, 5.0545, 1.9759, 0.0971, 0.0314]),
         6: np.array([148.3, 42.19, 15.33, 6.146, 0.7846, 0.2511]),
         7: np.array([178.0, 52.42, 19.87, 1.276, 0.6291, 0.2857]),
         8: np.array([220.1, 65.66, 25.98, 1.685, 0.6860, 0.2311]),
+        9: np.array([319.6233, 85.5603, 31.7878, 2.4347, 1.0167, 0.3276]),
+        14: np.array([592.0697, 213.778, 88.4554, 71.7604, 8.3302, 4.0274, 0.4191, 0.2271, 0.076]),
+        # 14: np.array([374.1708, 118.753, 69.9363, 9.0231, 8.3656, 4.0225, 0.3888, 0.2045, 0.0711]),
+        16: np.array(
+            [
+                715.0735,
+                240.4533,
+                120.1752,
+                14.3796,
+                7.0821,
+                0.5548,
+                0.5176,
+                0.2499,
+                0.1035,
+            ]
+        ),
+        17: np.array(
+            [
+                1139.4058,
+                379.1381,
+                151.8297,
+                34.9379,
+                19.5054,
+                8.9484,
+                0.6579,
+                0.3952,
+                0.1635,
+            ]
+        ),
+        35: np.array(
+            [
+                1026.4314,
+                118.9876,
+                115.0694,
+                82.964,
+                66.2115,
+                64.8824,
+                6.4775,
+                5.2615,
+                1.6828,
+                0.5514,
+                0.2747,
+                0.1136,
+            ]
+        ),
     }
     if atnum in param_dict:
         return param_dict[atnum]
