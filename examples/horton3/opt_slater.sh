@@ -20,11 +20,11 @@
 #
 
 elements=(h c n o f si s cl br)
-# elements=(si )
+# elements=(o )
 
 for e in ${elements[@]}; do
     denspart-from-horton3 $e.fchk density_$e.npz
-    denspart density_$e.npz results_$e.npz -t GISA > $e.log
+    denspart density_$e.npz results_$e.npz -t MBIS > ${e}_slater.log
     # denspart-write-extxyz results_$e.npz results_$e.xyz
     echo "$e done!"
 done
