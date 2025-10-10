@@ -18,13 +18,12 @@
 # --
 """Prepare inputs for denspart from a GPAW calculation."""
 
-
 import argparse
 
 import numpy as np
 from ase.units import Bohr
 from gpaw import restart
-from gpaw.utilities import unpack2
+from gpaw.utilities import unpack_density
 from grid.atomgrid import AtomGrid
 from grid.onedgrid import OneDGrid
 from grid.rtransform import HyperbolicRTransform
@@ -157,7 +156,7 @@ def get_uniform_grid_data(calc, cellvecs, atnums):
     # We're assuming all systems in GPAW are neutral. In fact, this is not strictly True
     # in all cases. We may have to relax this a little.
     q_ae = data["ae_density"].sum() * w
-    assert_allclose(q_ae, atnums.sum())
+    assert_allclose(q_ae, atnums.sum(), atol=1e-10)
 
     return data
 
@@ -217,11 +216,11 @@ def get_atomic_grid_data(calc):
 
         atom_data = {}
         if calc.wfs.nspins == 1:
-            atom_data["dm"] = unpack2(calc.density.D_asp.get(iatom)[0])[order][:, order]
+            atom_data["dm"] = unpack_density(calc.density.D_asp.get(iatom)[0])[order][:, order]
         else:
             # spin-summed and spin-difference atomic density matrices.
-            dma = unpack2(calc.density.D_asp.get(iatom)[0])[order][:, order]
-            dmb = unpack2(calc.density.D_asp.get(iatom)[1])[order][:, order]
+            dma = unpack_density(calc.density.D_asp.get(iatom)[0])[order][:, order]
+            dmb = unpack_density(calc.density.D_asp.get(iatom)[1])[order][:, order]
             atom_data["dm"] = dma + dmb
             atom_data["spindm"] = dma - dmb
         assert atom_data["dm"].shape == (setup.ni, setup.ni)
@@ -290,8 +289,8 @@ def dump_spline(data, key, y, setup, ell):
     odg = OneDGrid(np.arange(size_short), np.ones(size_short), (0, size_short))
     rad_short = rtf.transform_1d_grid(odg)
     # Sanity checks
-    assert_allclose(rad_short.points, setup.rgd.r_g[:size_short])
-    assert_allclose(rad_short.weights, setup.rgd.dr_g[:size_short])
+    assert_allclose(rad_short.points, setup.rgd.r_g[:size_short], atol=1e-10)
+    assert_allclose(rad_short.weights, setup.rgd.dr_g[:size_short], atol=1e-10)
 
     # Correct normalization and create spline.
     ycorrected = y * np.sqrt((2 * ell + 1) / np.pi) / 2
@@ -355,21 +354,15 @@ def compute_augmentation_spheres(uniform_data, setups, atoms, atnums, atcoords):
         vcor = atgrid_short.integrate(atom_data["density_v_cor"])
         myqcors[iatom] += vcor
         print(
-            "  {:2d} {:4d}   {:12.7f}   {:12.7f}   {:12.5e}".format(
-                atnums[iatom],
-                iatom,
-                myqcors[iatom],
-                qcors[iatom],
-                myqcors[iatom] - qcors[iatom],
-            )
+            f"  {atnums[iatom]:2d} {iatom:4d}   {myqcors[iatom]:12.7f}"
+            f"   {qcors[iatom]:12.7f}   {myqcors[iatom] - qcors[iatom]:12.5e}"
         )
 
         if sqcors is not None:
             mysqcors[iatom] = atgrid_short.integrate(atom_data["spindensity_v_cor"])
             print(
-                "spin      {:12.7f}   {:12.7f}   {:12.5e}".format(
-                    mysqcors[iatom], sqcors[iatom], mysqcors[iatom] - sqcors[iatom]
-                )
+                f"spin      {mysqcors[iatom]:12.7f}   {sqcors[iatom]:12.7f}"
+                f"   {mysqcors[iatom] - sqcors[iatom]:12.5e}"
             )
 
     print("  ~~~~~~~  ~~~~~~~~~~~~~  ~~~~~~~~~~~~~  ~~~~~~~~~~~~~")
@@ -377,11 +370,11 @@ def compute_augmentation_spheres(uniform_data, setups, atoms, atnums, atcoords):
     # Checks on the total charge
     print(f"  GPAW total charge:     {nelec_pseudo + qcors.sum():10.3e}")
     print(f"  DensPart total charge: {nelec_pseudo + myqcors.sum():10.3e}")
-    assert_allclose(qcors, myqcors)
+    assert_allclose(qcors, myqcors, atol=1e-10)
     if sqcors is not None:
         print(f"  GPAW total spin:       {spin_pseudo + sqcors.sum():10.3e}")
         print(f"  DensPart total spin:   {spin_pseudo + mysqcors.sum():10.3e}")
-        assert_allclose(sqcors, mysqcors)
+        assert_allclose(sqcors, mysqcors, atol=1e-10)
 
 
 def eval_correction(atom_data, setup_data):

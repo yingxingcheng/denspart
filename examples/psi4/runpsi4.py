@@ -19,8 +19,8 @@
 # --
 """Example of the PSI4 interface, by writing out PSI4's quadrature grids."""
 
-
 import psi4
+
 from denspart.adapters.psi4 import write_density_npz
 
 psi4.core.set_output_file("output.txt", False)

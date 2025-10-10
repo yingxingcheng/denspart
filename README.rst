@@ -255,12 +255,15 @@ It is assumed that you have `direnv <https://direnv.net/>`_ installed.
     git clone git@github.com:theochem/denspart.git
     cd denspart
     # Create a virtual environment with all dependencies needed for testing
-    python -m venv env
-    echo "source env/bin/activate" > .envrc
+    python -m venv venv
+    cat > .envrc << 'EOL'
+    source venv/bin/activate
+    export GPAW_SETUP_PATH=${PWD}/venv/share/gpaw-setups-0.9.20000
+    EOL
     direnv allow
     pip install -U pip
     pip install -e .
-    # Mandatory dependency, but not yet included in setup.py
+    # Mandatory dependency, but not yet included in pyproject.toml
     pip install --upgrade git+https://github.com/theochem/grid.git
     # Development tools
     pip install --upgrade pre-commit ruff black
@@ -270,9 +273,10 @@ It is assumed that you have `direnv <https://direnv.net/>`_ installed.
     pip install --upgrade git+https://github.com/tovrstra/pytest-regressions@npz
     pip install --upgrade ase
     # (Make sure BLAS and LibXC are installed, so GPAW can link to them.)
+    # Fedora: sudo dnf install libxc-devel blas-devel
     pip install --upgrade gpaw
     # Install GPAW pseudopotentials
-    gpaw install-data env/share
+    gpaw install-data venv/share --no-register
 
 To run all tests locally:
 
