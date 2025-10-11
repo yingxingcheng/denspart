@@ -18,7 +18,6 @@
 # --
 """Write denspart results into a nice extended XYZ."""
 
-
 import argparse
 
 import numpy as np
@@ -38,7 +37,7 @@ ATOM_COLUMNS = [
         (),
         float,
         lambda word: float(word) * angstrom**3,
-        lambda value: "{:15.10f}".format(value / angstrom**3),
+        lambda value: f"{value / angstrom**3:15.10f}",
     ),
     (
         "atffparams",
