@@ -26,10 +26,10 @@ from grid.basegrid import Grid
 from grid.periodicgrid import PeriodicGrid
 
 from .cache import ComputeCache
-from .gisa import GISAProModel
+from .lisa import LISAProModel
 from .mbis import MBISProModel
 from .properties import compute_multipole_moments, compute_radial_moments
-from .vh import optimize_reduce_pro_model
+from .vh import optimize_reduce_pro_model, optimize_pro_model
 
 __all__ = ["main"]
 
@@ -45,24 +45,35 @@ def main(args=None):
         print("Using periodic grid")
         grid = PeriodicGrid(data["points"], data["weights"], data["cellvecs"], wrap=True)
     density = data["density"]
-    if args.method == "GISA":
-        print("GISA partitioning --")
-        pro_model_init = GISAProModel.from_geometry(data["atnums"], data["atcoords"])
+    if args.method == "LISA":
+        print("LISA partitioning --")
+        pro_model_init = LISAProModel.from_geometry(data["atnums"], data["atcoords"])
     elif args.method == "MBIS":
         print("MBIS partitioning --")
         pro_model_init = MBISProModel.from_geometry(data["atnums"], data["atcoords"], nshell_map)
     else:
         raise NotImplementedError
     cache = ComputeCache() if args.do_cache else None
-    pro_model, localgrids = optimize_reduce_pro_model(
-        pro_model_init,
-        grid,
-        density,
-        args.gtol,
-        args.maxiter,
-        args.density_cutoff,
-        cache,
-    )
+    if args.method == "MBIS":
+        pro_model, localgrids = optimize_reduce_pro_model(
+            pro_model_init,
+            grid,
+            density,
+            args.gtol,
+            args.maxiter,
+            args.density_cutoff,
+            cache,
+        )
+    else:
+        pro_model, localgrids = optimize_pro_model(
+            pro_model_init,
+            grid,
+            density,
+            args.gtol,
+            args.maxiter,
+            args.density_cutoff,
+            cache,
+        )
     print("Promodel")
     pro_model.pprint()
     print("Computing additional properties")
@@ -129,9 +140,9 @@ def parse_args(args=None):
         "-t",
         "--method",
         type=str,
-        choices=["GISA", "MBIS"],
+        choices=["LISA", "MBIS"],
         default="MBIS",
-        help="Type of method to use: GISA or MBIS. [default=%(default)s]",
+        help="Type of method to use: LISA or MBIS. [default=%(default)s]",
     )
     parser.add_argument(
         "--nshell",

@@ -17,7 +17,7 @@
 # along with this program; if not, see <http://www.gnu.org/licenses/>
 # --
 # pylint: disable=too-many-lines
-"""Gaussian Iterative Stockholder Analysis (GISA) partitioning scheme."""
+"""Linear approximation of Iterative Stockholder Analysis (LISA) partitioning scheme."""
 
 
 import warnings
@@ -29,11 +29,11 @@ from .cache import compute_cached
 from .mbis import connected_vertices
 from .vh import BasisFunction, ProModel
 
-__all__ = ["GISAProModel"]
+__all__ = ["LISAProModel"]
 
 
 class GaussianFunction(BasisFunction):
-    """Gaussian basis function for the GISA pro density.
+    """Gaussian basis function for the LISA pro density.
 
     See BasisFunction base class for API documentation.
     """
@@ -101,7 +101,7 @@ class GaussianFunction(BasisFunction):
         return np.array([factor * exp])
 
 
-class GISAProModel(ProModel):
+class LISAProModel(ProModel):
     """ProModel for MBIS partitioning."""
 
     @classmethod
@@ -182,8 +182,8 @@ class GISAProModel(ProModel):
     @classmethod
     def from_dict(cls, data):
         """Recreate the pro-model from a dictionary."""
-        if data["class"] != "GISAProModel":
-            raise TypeError("The dictionary class field should be GISAProModel.")
+        if data["class"] != "LISAProModel":
+            raise TypeError("The dictionary class field should be LISAProModel.")
         fns = []
         ipar = 0
         atnums = data["atnums"]
@@ -206,6 +206,7 @@ def get_alpha(atnum):
         6: np.array([148.3, 42.19, 15.33, 6.146, 0.7846, 0.2511]),
         7: np.array([178.0, 52.42, 19.87, 1.276, 0.6291, 0.2857]),
         8: np.array([220.1, 65.66, 25.98, 1.685, 0.6860, 0.2311]),
+        14: np.array([366.5112, 104.3665, 15.5123, 9.5104, 7.8724, 5.3849, 3.702, 0.3241, 0.1076]),
     }
     if atnum in param_dict:
         return param_dict[atnum]
