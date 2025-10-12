@@ -19,8 +19,12 @@
 # --
 
 
-# gpaw run quartz.cif -W quartz.gpw
-# denspart-from-gpaw quartz.gpw density.npz
+if [ ! -f density.npz ]; then
+    if [ ! -f quartz.gpw ]; then
+        gpaw run quartz.cif -W quartz.gpw
+    fi
+    denspart-from-gpaw quartz.gpw density.npz
+fi
 
 # This is slow!
 denspart density.npz results_lisa.npz -t LISA
