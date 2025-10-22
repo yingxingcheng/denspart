@@ -101,7 +101,7 @@ class GaussianFunction(BasisFunction):
 
 
 class LISAProModel(ProModel):
-    """ProModel for MBIS partitioning."""
+    """ProModel for LISA partitioning."""
 
     @classmethod
     def from_geometry(cls, atnums, atcoords):
