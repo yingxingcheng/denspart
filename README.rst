@@ -2,9 +2,10 @@ DensPart
 ########
 
 
-DensPart is an atoms-in-molecules density partitioning program. At the moment, it only
-features one method to partition the density, namely the Minimal Basis Iterative
-Stockholder (MBIS) scheme. See http://dx.doi.org/10.1021/acs.jctc.6b00456
+DensPart is an atoms-in-molecules density partitioning program. It implements the
+Minimal Basis Iterative Stockholder (MBIS) and Linear Iterative Stockholder Analysis
+(LISA) schemes, plus conventional Hirshfeld partitioning with fixed contracted-Gaussian
+neutral pro-atoms. See http://dx.doi.org/10.1021/acs.jctc.6b00456 for MBIS.
 
 **Disclaimer:** This implementation is a prototype and is not extensively tested yet.
 Future revisions may break backward compatibility of the API and file formats.
@@ -55,6 +56,35 @@ With a ``density.npz`` file, one can perform the partitioning as follows:
 
     denspart density.npz results.npz
 
+MBIS is the default. Select LISA and, when needed, provide a Gaussian basis JSON file:
+
+.. code-block:: bash
+
+    denspart density.npz results-lisa.npz --method LISA
+    denspart density.npz results-lisa.npz --method LISA --lisa-basis basis.json
+
+The custom basis may use HORTON-Part's ``{Z: [orders, exponents, initials]}`` layout or
+the versioned ``denspart-lisa-basis-v1`` layout. DensPart currently supports only
+order-two Gaussian LISA functions. Initial populations are normalized per element.
+The built-in basis includes H, Li, B--F, Si, P, S, Cl, Ga, and Br. The P and Ga
+functions were constructed from PBE/6-311+G(d,p) atomic densities over charge states
+``-2`` through ``+2`` and validated on periodic GaP.
+
+Gaussian-reference Hirshfeld requires a state-preserving pro-atom library:
+
+.. code-block:: bash
+
+    denspart density.npz results-hirshfeld.npz --method HIRSHFELD \
+        --proatom-basis pbe-6311pgdp-proatoms.json
+
+The input must use the ``denspart-proatom-basis-v2`` format. DensPart selects exactly one
+neutral state per element and keeps every Gaussian exponent and population fixed. Atomic
+charges are obtained by integrating the partitioned molecular density; the neutral
+reference populations themselves are not reported as atomic charges. Charged states are
+retained in the library for future Hirshfeld-I interpolation and AVH models. This method
+uses fitted Gaussian atomic references and is therefore distinct from GPAW's PAW-setup
+Hirshfeld implementation and HORTON-Part's numerical radial ``ProAtomDB`` representation.
+
 The output is stored in ``results.npz``, and contains the following arrays. (These may
 be subject to change in future code revisions.)
 
@@ -90,6 +120,18 @@ be subject to change in future code revisions.)
   - ``core_charges``: MBIS core charges, shape ``(natom,)``.
   - ``valence_charges``: MBIS valence charges, shape ``(natom,)``.
   - ``valence_widths``: MBIS valence widths, shape ``(natom,)``.
+
+- LISA-specific outputs:
+
+  - ``exponents``: Gaussian exponents in the same order as ``propars``, shape
+    ``(sum(atnfn),)``. Storing these values permits exact reconstruction when a custom
+    or reduced basis was used.
+
+- Gaussian-Hirshfeld-specific outputs:
+
+  - ``reference_charges``: charges implied by the fixed neutral references (zero within
+    basis normalization tolerance). These are diagnostic values, not AIM charges.
+  - ``method``: the string ``HIRSHFELD``.
 
 - Algorithm settings:
 

@@ -26,6 +26,19 @@ __all__ = ("ComputeCache",)
 class ComputeCache:
     def __init__(self):
         self._cache = {}
+        self._objects = {}
+
+    def identity(self, obj):
+        """Return a stable object identity for the lifetime of the cache.
+
+        Holding a strong reference prevents CPython from reusing an object's ID
+        for a later temporary array, which would otherwise return stale cached data.
+        """
+        identity = id(obj)
+        previous = self._objects.setdefault(identity, obj)
+        if previous is not obj:
+            raise RuntimeError("Object identity collision in computation cache.")
+        return identity
 
     def keep(self, stage, key, result):
         self._cache.setdefault(stage, {})[key] = result

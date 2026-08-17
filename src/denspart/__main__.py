@@ -26,10 +26,11 @@ from grid.basegrid import Grid
 from grid.periodicgrid import PeriodicGrid
 
 from .cache import ComputeCache
+from .hirshfeld import GaussianHirshfeldProModel
 from .lisa import LISAProModel
 from .mbis import MBISProModel
 from .properties import compute_multipole_moments, compute_radial_moments
-from .vh import optimize_reduce_pro_model, optimize_pro_model
+from .vh import optimize_pro_model, optimize_reduce_pro_model
 
 __all__ = ["main"]
 
@@ -47,9 +48,28 @@ def main(args=None):
     density = data["density"]
     if args.method == "LISA":
         print("LISA partitioning --")
-        pro_model_init = LISAProModel.from_geometry(data["atnums"], data["atcoords"])
+        if args.nshell:
+            raise ValueError("--nshell applies only to MBIS, not LISA.")
+        pro_model_init = LISAProModel.from_geometry(
+            data["atnums"], data["atcoords"], basis=args.lisa_basis
+        )
+        if args.proatom_basis is not None:
+            raise ValueError("--proatom-basis applies only to HIRSHFELD, not LISA.")
+    elif args.method == "HIRSHFELD":
+        print("Gaussian-reference Hirshfeld partitioning --")
+        if args.nshell:
+            raise ValueError("--nshell applies only to MBIS, not HIRSHFELD.")
+        if args.lisa_basis is not None:
+            raise ValueError("--lisa-basis applies only to LISA, not HIRSHFELD.")
+        pro_model_init = GaussianHirshfeldProModel.from_geometry(
+            data["atnums"], data["atcoords"], basis=args.proatom_basis
+        )
     elif args.method == "MBIS":
         print("MBIS partitioning --")
+        if args.lisa_basis is not None:
+            raise ValueError("--lisa-basis applies only to LISA, not MBIS.")
+        if args.proatom_basis is not None:
+            raise ValueError("--proatom-basis applies only to HIRSHFELD, not MBIS.")
         pro_model_init = MBISProModel.from_geometry(data["atnums"], data["atcoords"], nshell_map)
     else:
         raise NotImplementedError
@@ -64,7 +84,7 @@ def main(args=None):
             args.density_cutoff,
             cache,
         )
-    else:
+    elif args.method == "LISA":
         pro_model, localgrids = optimize_pro_model(
             pro_model_init,
             grid,
@@ -74,16 +94,28 @@ def main(args=None):
             args.density_cutoff,
             cache,
         )
+    else:
+        pro_model = pro_model_init
+        localgrids = [
+            grid.get_localgrid(function.center, function.get_cutoff_radius(args.density_cutoff))
+            for function in pro_model.fns
+        ]
     print("Promodel")
     pro_model.pprint()
     print("Computing additional properties")
     results = pro_model.to_dict()
+    radial_moments = compute_radial_moments(
+        pro_model, grid, density, localgrids, args.density_cutoff, cache
+    )
+    charges = (
+        np.asarray(data["atnums"], dtype=float) - radial_moments[:, 0]
+        if args.method == "HIRSHFELD"
+        else pro_model.charges
+    )
     results.update(
         {
-            "charges": pro_model.charges,
-            "radial_moments": compute_radial_moments(
-                pro_model, grid, density, localgrids, args.density_cutoff, cache
-            ),
+            "charges": charges,
+            "radial_moments": radial_moments,
             "multipole_moments": compute_multipole_moments(
                 pro_model, grid, density, localgrids, args.density_cutoff, cache
             ),
@@ -93,7 +125,7 @@ def main(args=None):
         }
     )
     np.savez_compressed(args.out_npz, **results)
-    print("Sum of charges: ", sum(pro_model.charges))
+    print("Sum of charges: ", sum(charges))
 
 
 def parse_nshell_arg(nshell):
@@ -140,9 +172,9 @@ def parse_args(args=None):
         "-t",
         "--method",
         type=str,
-        choices=["LISA", "MBIS"],
+        choices=["HIRSHFELD", "LISA", "MBIS"],
         default="MBIS",
-        help="Type of method to use: LISA or MBIS. [default=%(default)s]",
+        help="Type of method to use: HIRSHFELD, LISA, or MBIS. [default=%(default)s]",
     )
     parser.add_argument(
         "--nshell",
@@ -153,6 +185,16 @@ def parse_args(args=None):
         "The num part must be a positive integer and cannot exceed the "
         "default number of shells specified for that element. "
         "At least one argument must be given.",
+    )
+    parser.add_argument(
+        "--lisa-basis",
+        help="JSON file containing Gaussian basis functions for LISA. "
+        "Both HORTON-Part and denspart-lisa-basis-v1 layouts are supported.",
+    )
+    parser.add_argument(
+        "--proatom-basis",
+        help="State-resolved denspart-proatom-basis-v2 JSON file. HIRSHFELD selects "
+        "the fixed neutral state; charged states are retained for future methods.",
     )
     parser.add_argument(
         "--nocache",

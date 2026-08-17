@@ -25,3 +25,16 @@ try:
     from ._version import __version__
 except ImportError:
     __version__ = "0.0.0.post0"
+
+from .hirshfeld import GaussianHirshfeldProModel
+from .lisa import LISAProModel
+from .mbis import MBISProModel
+from .vh import ProModel
+
+__all__ = [
+    "GaussianHirshfeldProModel",
+    "LISAProModel",
+    "MBISProModel",
+    "ProModel",
+    "__version__",
+]
