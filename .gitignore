@@ -126,3 +126,4 @@ ENV/
 
 # Ruff
 .ruff_cache
+upload.sh
