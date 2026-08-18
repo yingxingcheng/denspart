@@ -47,7 +47,12 @@ class ComputeCache:
         return self._cache.get(stage, {}).get(key)
 
     def discard(self, stage):
-        self._cache.pop(stage)
+        self._cache.pop(stage, None)
+
+    def clear(self):
+        """Discard all cached values and retained object identities."""
+        self._cache.clear()
+        self._objects.clear()
 
 
 def compute_cached(cache: ComputeCache, until: str, key: tuple, func: Callable):

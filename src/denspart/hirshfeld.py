@@ -11,7 +11,89 @@ import numpy as np
 
 from .lisa import GaussianFunction, LISAProModel
 
-__all__ = ["GaussianHirshfeldProModel", "load_hirshfeld_basis"]
+__all__ = ["GaussianHirshfeldProModel", "load_hirshfeld_basis", "load_proatom_states"]
+
+
+def _load_library(source, expected_format):
+    """Return a JSON-like basis mapping and validate its format marker."""
+    if source is None:
+        raise ValueError(f"A {expected_format} basis file is required.")
+    if isinstance(source, str | Path):
+        with Path(source).open(encoding="utf8") as handle:
+            library = json.load(handle)
+    else:
+        library = source
+    if not isinstance(library, dict) or library.get("format") != expected_format:
+        raise ValueError(f"Expected a {expected_format} mapping.")
+    elements = library.get("elements")
+    if not isinstance(elements, dict) or not elements:
+        raise ValueError("The pro-atom basis contains no elements.")
+    return library, elements
+
+
+def _validate_state_primitives(atnum, charge, state, key="primitives", normalized=False):
+    """Validate and return one Gaussian atomic-state expansion."""
+    primitives = state.get(key, {})
+    orders = np.asarray(primitives.get("orders"), dtype=float)
+    exponents = np.asarray(primitives.get("exponents"), dtype=float)
+    value_key = "coefficients" if normalized else "populations"
+    values = np.asarray(primitives.get(value_key), dtype=float)
+    if orders.ndim != 1 or exponents.ndim != 1 or values.ndim != 1:
+        raise ValueError(f"Pro-atom arrays for Z={atnum}, charge={charge:+d} must be 1D.")
+    if not (len(orders) == len(exponents) == len(values)):
+        raise ValueError(f"Pro-atom arrays for Z={atnum}, charge={charge:+d} have unequal lengths.")
+    expected_population = 1 if normalized else atnum - charge
+    if expected_population < 0:
+        raise ValueError(f"Charge {charge:+d} gives a negative population for Z={atnum}.")
+    if expected_population > 0 and len(orders) == 0:
+        raise ValueError(f"Populated state Z={atnum}, charge={charge:+d} has no primitives.")
+    if not np.all(orders == 2):
+        raise ValueError("DensPart Gaussian pro-atoms support only order-two functions.")
+    if not np.isfinite(exponents).all() or not (exponents > 0).all():
+        raise ValueError(
+            f"Exponents for Z={atnum}, charge={charge:+d} must be finite and positive."
+        )
+    if not np.isfinite(values).all() or not (values >= 0).all():
+        raise ValueError(
+            f"{value_key.capitalize()} for Z={atnum}, charge={charge:+d} must be "
+            "finite and nonnegative."
+        )
+    expected_sum = float(expected_population)
+    if not np.isclose(values.sum(), expected_sum, rtol=0.0, atol=1.0e-8):
+        raise ValueError(
+            f"State Z={atnum}, charge={charge:+d} {value_key} integrate to "
+            f"{values.sum():.12g}, expected {expected_sum:.12g}."
+        )
+    return exponents, values
+
+
+def load_proatom_states(source):
+    """Load all Gaussian charge states from a state-preserving basis library."""
+    _, elements = _load_library(source, "denspart-proatom-basis-v2")
+    result = {}
+    for raw_atnum, element in elements.items():
+        try:
+            atnum = int(raw_atnum)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid atomic number in pro-atom basis: {raw_atnum!r}.") from exc
+        states = {}
+        for state in element.get("states", []):
+            raw_charge = state.get("charge")
+            if not isinstance(raw_charge, int | np.integer):
+                raise ValueError(f"Charge states for atomic number {atnum} must be integers.")
+            charge = int(raw_charge)
+            if charge in states:
+                raise ValueError(f"Duplicate charge {charge:+d} for atomic number {atnum}.")
+            electrons = state.get("electrons", atnum - charge)
+            if int(electrons) != atnum - charge:
+                raise ValueError(
+                    f"State Z={atnum}, charge={charge:+d} has inconsistent electron count."
+                )
+            states[charge] = _validate_state_primitives(atnum, charge, state)
+        if 0 not in states:
+            raise ValueError(f"Atomic number {atnum} must have exactly one neutral state.")
+        result[atnum] = states
+    return result
 
 
 def load_hirshfeld_basis(source):
@@ -21,54 +103,7 @@ def load_hirshfeld_basis(source):
     source data can later support charged-state Hirshfeld-I interpolation and AVH.
     Primitive populations are preserved: unlike LISA, they are not initial guesses.
     """
-    if source is None:
-        raise ValueError("Gaussian Hirshfeld requires a pro-atom basis file.")
-    if isinstance(source, (str, Path)):
-        with Path(source).open(encoding="utf8") as handle:
-            library = json.load(handle)
-    else:
-        library = source
-    if not isinstance(library, dict) or library.get("format") != "denspart-proatom-basis-v2":
-        raise ValueError("Expected a denspart-proatom-basis-v2 mapping.")
-    elements = library.get("elements")
-    if not isinstance(elements, dict) or not elements:
-        raise ValueError("The pro-atom basis contains no elements.")
-
-    result = {}
-    for raw_atnum, element in elements.items():
-        try:
-            atnum = int(raw_atnum)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"Invalid atomic number in pro-atom basis: {raw_atnum!r}.") from exc
-        neutral_states = [state for state in element.get("states", []) if state.get("charge") == 0]
-        if len(neutral_states) != 1:
-            raise ValueError(f"Atomic number {atnum} must have exactly one neutral state.")
-        state = neutral_states[0]
-        primitives = state.get("primitives", {})
-        orders = np.asarray(primitives.get("orders"), dtype=float)
-        exponents = np.asarray(primitives.get("exponents"), dtype=float)
-        populations = np.asarray(primitives.get("populations"), dtype=float)
-        if orders.ndim != 1 or exponents.ndim != 1 or populations.ndim != 1:
-            raise ValueError(f"Neutral pro-atom arrays for atomic number {atnum} must be 1D.")
-        if not (len(orders) == len(exponents) == len(populations)) or len(orders) == 0:
-            raise ValueError(
-                f"Neutral pro-atom arrays for atomic number {atnum} have unequal lengths."
-            )
-        if not np.all(orders == 2):
-            raise ValueError("DensPart Gaussian Hirshfeld supports only order-two functions.")
-        if not np.isfinite(exponents).all() or not (exponents > 0).all():
-            raise ValueError(f"Exponents for atomic number {atnum} must be finite and positive.")
-        if not np.isfinite(populations).all() or not (populations >= 0).all():
-            raise ValueError(
-                f"Populations for atomic number {atnum} must be finite and nonnegative."
-            )
-        if not np.isclose(populations.sum(), atnum, rtol=0.0, atol=1.0e-8):
-            raise ValueError(
-                f"Neutral populations for atomic number {atnum} integrate to "
-                f"{populations.sum():.12g}, expected {atnum}."
-            )
-        result[atnum] = (exponents, populations)
-    return result
+    return {atnum: states[0] for atnum, states in load_proatom_states(source).items()}
 
 
 class GaussianHirshfeldProModel(LISAProModel):

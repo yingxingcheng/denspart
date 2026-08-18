@@ -25,11 +25,18 @@ import numpy as np
 from grid.basegrid import Grid
 from grid.periodicgrid import PeriodicGrid
 
+from .avh import AVHProModel, optimize_avh_pro_model
 from .cache import ComputeCache
 from .hirshfeld import GaussianHirshfeldProModel
+from .hirshfeld_i import GaussianHirshfeldIProModel, optimize_hirshfeld_i
 from .lisa import LISAProModel
 from .mbis import MBISProModel
 from .properties import compute_multipole_moments, compute_radial_moments
+from .spline import (
+    SplineProModel,
+    is_spline_basis,
+    optimize_spline_hirshfeld_i,
+)
 from .vh import optimize_pro_model, optimize_reduce_pro_model
 
 __all__ = ["main"]
@@ -55,21 +62,76 @@ def main(args=None):
         )
         if args.proatom_basis is not None:
             raise ValueError("--proatom-basis applies only to HIRSHFELD, not LISA.")
+        if args.avh_basis is not None:
+            raise ValueError("--avh-basis applies only to AVH, not LISA.")
     elif args.method == "HIRSHFELD":
-        print("Gaussian-reference Hirshfeld partitioning --")
+        representation = "spline" if is_spline_basis(args.proatom_basis) else "Gaussian"
+        print(f"{representation}-reference Hirshfeld partitioning --")
         if args.nshell:
             raise ValueError("--nshell applies only to MBIS, not HIRSHFELD.")
         if args.lisa_basis is not None:
             raise ValueError("--lisa-basis applies only to LISA, not HIRSHFELD.")
-        pro_model_init = GaussianHirshfeldProModel.from_geometry(
-            data["atnums"], data["atcoords"], basis=args.proatom_basis
-        )
+        if representation == "spline":
+            pro_model_init = SplineProModel.from_geometry(
+                data["atnums"],
+                data["atcoords"],
+                basis=args.proatom_basis,
+                method=args.method,
+            )
+        else:
+            pro_model_init = GaussianHirshfeldProModel.from_geometry(
+                data["atnums"], data["atcoords"], basis=args.proatom_basis
+            )
+        if args.avh_basis is not None:
+            raise ValueError("--avh-basis applies only to AVH, not HIRSHFELD.")
+    elif args.method == "HIRSHFELD-I":
+        representation = "spline" if is_spline_basis(args.proatom_basis) else "Gaussian"
+        print(f"{representation}-reference iterative Hirshfeld partitioning --")
+        if args.nshell:
+            raise ValueError("--nshell applies only to MBIS, not HIRSHFELD-I.")
+        if args.lisa_basis is not None:
+            raise ValueError("--lisa-basis applies only to LISA, not HIRSHFELD-I.")
+        if args.avh_basis is not None:
+            raise ValueError("--avh-basis applies only to AVH, not HIRSHFELD-I.")
+        if representation == "spline":
+            pro_model_init = SplineProModel.from_geometry(
+                data["atnums"],
+                data["atcoords"],
+                basis=args.proatom_basis,
+                method=args.method,
+            )
+        else:
+            pro_model_init = GaussianHirshfeldIProModel.from_geometry(
+                data["atnums"], data["atcoords"], basis=args.proatom_basis
+            )
+    elif args.method == "AVH":
+        representation = "spline" if is_spline_basis(args.avh_basis) else "Gaussian"
+        print(f"{representation} Additive Variational Hirshfeld partitioning --")
+        if args.nshell:
+            raise ValueError("--nshell applies only to MBIS, not AVH.")
+        if args.lisa_basis is not None:
+            raise ValueError("--lisa-basis applies only to LISA, not AVH.")
+        if args.proatom_basis is not None:
+            raise ValueError("--proatom-basis applies only to HIRSHFELD methods, not AVH.")
+        if representation == "spline":
+            pro_model_init = SplineProModel.from_geometry(
+                data["atnums"],
+                data["atcoords"],
+                basis=args.avh_basis,
+                method=args.method,
+            )
+        else:
+            pro_model_init = AVHProModel.from_geometry(
+                data["atnums"], data["atcoords"], basis=args.avh_basis
+            )
     elif args.method == "MBIS":
         print("MBIS partitioning --")
         if args.lisa_basis is not None:
             raise ValueError("--lisa-basis applies only to LISA, not MBIS.")
         if args.proatom_basis is not None:
             raise ValueError("--proatom-basis applies only to HIRSHFELD, not MBIS.")
+        if args.avh_basis is not None:
+            raise ValueError("--avh-basis applies only to AVH, not MBIS.")
         pro_model_init = MBISProModel.from_geometry(data["atnums"], data["atcoords"], nshell_map)
     else:
         raise NotImplementedError
@@ -86,6 +148,31 @@ def main(args=None):
         )
     elif args.method == "LISA":
         pro_model, localgrids = optimize_pro_model(
+            pro_model_init,
+            grid,
+            density,
+            args.gtol,
+            args.maxiter,
+            args.density_cutoff,
+            cache,
+        )
+    elif args.method == "AVH":
+        pro_model, localgrids = optimize_avh_pro_model(
+            pro_model_init,
+            grid,
+            density,
+            args.gtol,
+            args.maxiter,
+            args.density_cutoff,
+            cache,
+        )
+    elif args.method == "HIRSHFELD-I":
+        optimizer = (
+            optimize_spline_hirshfeld_i
+            if isinstance(pro_model_init, SplineProModel)
+            else optimize_hirshfeld_i
+        )
+        pro_model, localgrids = optimizer(
             pro_model_init,
             grid,
             density,
@@ -149,15 +236,15 @@ def parse_args(args=None):
         "--gtol",
         type=float,
         default=1e-8,
-        help="gtol convergence criterion for SciPy's trust-constr minimizer. [default=%(default)s]",
+        help="Convergence tolerance for charge iteration or variational optimization. "
+        "[default=%(default)s]",
     )
     parser.add_argument(
         "-m",
         "--maxiter",
         type=int,
         default=1000,
-        help="Maximum number of iterations in SciPy's trust-constr minimizer. "
-        "[default=%(default)s]",
+        help="Maximum number of charge or optimizer iterations. [default=%(default)s]",
     )
     parser.add_argument(
         "-c",
@@ -172,9 +259,9 @@ def parse_args(args=None):
         "-t",
         "--method",
         type=str,
-        choices=["HIRSHFELD", "LISA", "MBIS"],
+        choices=["HIRSHFELD", "HIRSHFELD-I", "AVH", "LISA", "MBIS"],
         default="MBIS",
-        help="Type of method to use: HIRSHFELD, LISA, or MBIS. [default=%(default)s]",
+        help="Partitioning method. [default=%(default)s]",
     )
     parser.add_argument(
         "--nshell",
@@ -193,8 +280,12 @@ def parse_args(args=None):
     )
     parser.add_argument(
         "--proatom-basis",
-        help="State-resolved denspart-proatom-basis-v2 JSON file. HIRSHFELD selects "
-        "the fixed neutral state; charged states are retained for future methods.",
+        help="State-resolved Gaussian or denspart-spline-proatom-basis-v1 JSON file. "
+        "HIRSHFELD selects the fixed neutral state; HIRSHFELD-I mixes adjacent states.",
+    )
+    parser.add_argument(
+        "--avh-basis",
+        help="Gaussian denspart-avh-basis-v1 or radial-spline state library.",
     )
     parser.add_argument(
         "--nocache",

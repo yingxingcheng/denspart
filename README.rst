@@ -4,8 +4,11 @@ DensPart
 
 DensPart is an atoms-in-molecules density partitioning program. It implements the
 Minimal Basis Iterative Stockholder (MBIS) and Linear Iterative Stockholder Analysis
-(LISA) schemes, plus conventional Hirshfeld partitioning with fixed contracted-Gaussian
-neutral pro-atoms. See http://dx.doi.org/10.1021/acs.jctc.6b00456 for MBIS.
+(LISA) schemes, conventional and iterative Hirshfeld partitioning, and Additive Variational
+Hirshfeld (AVH). Fixed atomic states may be represented by contracted Gaussians or direct
+radial splines. See
+http://dx.doi.org/10.1021/acs.jctc.6b00456 for MBIS and
+https://doi.org/10.1021/acs.jctc.4c01077 for AVH.
 
 **Disclaimer:** This implementation is a prototype and is not extensively tested yet.
 Future revisions may break backward compatibility of the API and file formats.
@@ -77,13 +80,33 @@ Gaussian-reference Hirshfeld requires a state-preserving pro-atom library:
     denspart density.npz results-hirshfeld.npz --method HIRSHFELD \
         --proatom-basis pbe-6311pgdp-proatoms.json
 
-The input must use the ``denspart-proatom-basis-v2`` format. DensPart selects exactly one
-neutral state per element and keeps every Gaussian exponent and population fixed. Atomic
-charges are obtained by integrating the partitioned molecular density; the neutral
-reference populations themselves are not reported as atomic charges. Charged states are
-retained in the library for future Hirshfeld-I interpolation and AVH models. This method
-uses fitted Gaussian atomic references and is therefore distinct from GPAW's PAW-setup
-Hirshfeld implementation and HORTON-Part's numerical radial ``ProAtomDB`` representation.
+The input must use the ``denspart-proatom-basis-v2`` format. Conventional Hirshfeld selects
+the neutral state and fixes its Gaussian exponents and populations. Hirshfeld-I instead
+updates all atomic charges simultaneously and linearly interpolates adjacent integer-charge
+states until the charge change is below ``--gtol``:
+
+.. code-block:: bash
+
+    denspart density.npz results-hi.npz --method HIRSHFELD-I \
+        --proatom-basis pbe-6311pgdp-proatoms.json
+
+AVH optimizes nonnegative populations of fixed, unit-integral atomic-state shapes with the
+extended KL objective and SciPy's SLSQP optimizer:
+
+.. code-block:: bash
+
+    denspart density.npz results-avh.npz --method AVH \
+        --avh-basis pbe-6311pgdp-avh-bound.json
+
+AVH inputs use the ``denspart-avh-basis-v1`` format. All three methods also accept one shared
+``denspart-spline-proatom-basis-v1`` library containing the original spherical isolated-atom
+densities. DensPart evaluates them with cubic splines constrained to zero slope at the origin
+and clips negligible interpolation undershoots to zero. Hirshfeld fixes the neutral-state
+coefficient, Hirshfeld-I mixes adjacent integer states, and AVH optimizes all selected
+nonnegative state coefficients. Pass a spline library through ``--proatom-basis`` for
+Hirshfeld methods or ``--avh-basis`` for AVH.
+
+These methods are distinct from GPAW's PAW-setup Hirshfeld implementation.
 
 The output is stored in ``results.npz``, and contains the following arrays. (These may
 be subject to change in future code revisions.)
@@ -127,11 +150,14 @@ be subject to change in future code revisions.)
     ``(sum(atnfn),)``. Storing these values permits exact reconstruction when a custom
     or reduced basis was used.
 
-- Gaussian-Hirshfeld-specific outputs:
+- Gaussian stockholder outputs:
 
-  - ``reference_charges``: charges implied by the fixed neutral references (zero within
-    basis normalization tolerance). These are diagnostic values, not AIM charges.
-  - ``method``: the string ``HIRSHFELD``.
+  - ``method``: ``HIRSHFELD``, ``HIRSHFELD-I``, or ``AVH``.
+  - ``reference_charges``: conventional-Hirshfeld charges implied by the fixed neutral
+    references. These are diagnostic values, not AIM charges.
+  - ``charge_history``: Hirshfeld-I charges from the neutral guess through convergence.
+  - ``state_charges`` and ``state_multipliers``: AVH state metadata and optimized
+    multipliers of the original electron-normalized state densities.
 
 - Algorithm settings:
 
