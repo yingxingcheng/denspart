@@ -21,11 +21,15 @@ __all__ = [
     "optimize_spline_hirshfeld_i",
 ]
 
+SPLINE_PROATOM_FORMATS = frozenset(
+    {"aim-proatom-spline-v1", "denspart-spline-proatom-basis-v1"}
+)
+
 
 def _load_mapping(source):
     """Load a JSON mapping from a path or return a supplied mapping."""
     if source is None:
-        raise ValueError("A denspart-spline-proatom-basis-v1 basis file is required.")
+        raise ValueError("An aim-proatom-spline-v1 basis file is required.")
     if isinstance(source, str | Path):
         with Path(source).open(encoding="utf8") as handle:
             return json.load(handle)
@@ -37,10 +41,10 @@ def is_spline_basis(source):
     if source is None:
         return False
     library = _load_mapping(source)
-    return isinstance(library, dict) and library.get("format") == "denspart-spline-proatom-basis-v1"
+    return isinstance(library, dict) and library.get("format") in SPLINE_PROATOM_FORMATS
 
 
-def load_spline_basis(source):
+def load_spline_basis(source, avh_variant=None):
     """Load electron-normalized isolated-atom densities on radial grids.
 
     Each returned state contains a unit-integral shape.  Its electron count is
@@ -48,10 +52,9 @@ def load_spline_basis(source):
     the outer population coefficients applied to these fixed shapes.
     """
     library = _load_mapping(source)
-    if not isinstance(library, dict) or library.get("format") != (
-        "denspart-spline-proatom-basis-v1"
-    ):
-        raise ValueError("Expected a denspart-spline-proatom-basis-v1 mapping.")
+    if not isinstance(library, dict) or library.get("format") not in SPLINE_PROATOM_FORMATS:
+        names = " or ".join(sorted(SPLINE_PROATOM_FORMATS))
+        raise ValueError(f"Expected an {names} mapping.")
     elements = library.get("elements")
     if not isinstance(elements, dict) or not elements:
         raise ValueError("The spline pro-atom basis contains no elements.")
@@ -105,14 +108,48 @@ def load_spline_basis(source):
                     f"{population:.12g}, expected {electrons}."
                 )
             shape = density / electrons if electrons else np.zeros_like(density)
-            states.append((charge, electrons, radii.copy(), shape))
+            states.append(
+                (
+                    charge,
+                    electrons,
+                    radii.copy(),
+                    shape,
+                    state.get("bound_to_electron_loss"),
+                )
+            )
         if not states:
             raise ValueError(f"Spline basis for Z={atnum} contains no states.")
         if 0 not in seen_charges:
             raise ValueError(f"Spline basis for Z={atnum} must contain a neutral state.")
         states.sort(key=lambda item: item[0])
-        result[atnum] = states
+        if avh_variant is not None:
+            states = _select_avh_states(states, avh_variant, atnum)
+        result[atnum] = [state[:4] for state in states]
     return result
+
+
+def _select_avh_states(states, variant, atnum):
+    """Select AVH-A/B/M states from one complete package-neutral library."""
+    variant = variant.upper()
+    by_charge = {state[0]: state for state in states if state[1] > 0}
+    if variant == "SUPPLIED":
+        return list(by_charge.values())
+    if variant == "M":
+        required = [0]
+    elif variant == "A":
+        required = list(range(-3, atnum))
+    elif variant == "B":
+        required = list(range(0, atnum))
+        anion = by_charge.get(-1)
+        if anion is not None and anion[4] is not False:
+            required.insert(0, -1)
+    else:
+        raise ValueError("AVH variant must be 'A', 'B', 'M', or 'supplied'.")
+    missing = [charge for charge in required if charge not in by_charge]
+    if missing:
+        labels = ", ".join(f"{charge:+d}" for charge in missing)
+        raise ValueError(f"AVH-{variant} for Z={atnum} is missing required states: {labels}.")
+    return [by_charge[charge] for charge in required]
 
 
 class SplineStateFunction(BasisFunction):
@@ -230,9 +267,18 @@ class SplineProModel(ProModel):
         super().__init__(atnums, atcoords, fns)
 
     @classmethod
-    def from_geometry(cls, atnums, atcoords, basis=None, method="HIRSHFELD"):
+    def from_geometry(
+        cls,
+        atnums,
+        atcoords,
+        basis=None,
+        method="HIRSHFELD",
+        avh_variant="supplied",
+    ):
         """Construct neutral pro-atoms and the state set required by ``method``."""
-        state_basis = load_spline_basis(basis)
+        state_basis = load_spline_basis(
+            basis, avh_variant=avh_variant if method == "AVH" else None
+        )
         functions = []
         for iatom, (atnum, atcoord) in enumerate(zip(atnums, atcoords, strict=True)):
             atnum = int(atnum)

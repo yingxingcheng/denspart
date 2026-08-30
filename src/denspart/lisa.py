@@ -182,7 +182,7 @@ def load_lisa_basis(source=None):
 
     ``source`` may be a path, a mapping, or ``None`` for the built-in HORTON-Part
     basis. Both the HORTON-Part ``{Z: [orders, exponents, initials]}`` layout and
-    the versioned ``{"format": "denspart-lisa-basis-v1", "elements": ...}``
+    the versioned ``{"format": "aim-lisa-basis-v1", "elements": ...}``
     layout are accepted. Initial populations are normalized to the atomic number.
     """
     if source is None:
@@ -196,7 +196,10 @@ def load_lisa_basis(source=None):
     if not isinstance(raw_basis, dict):
         raise TypeError("A LISA basis must be a mapping or a path to a JSON mapping.")
     if "elements" in raw_basis:
-        if raw_basis.get("format") != "denspart-lisa-basis-v1":
+        if raw_basis.get("format") not in {
+            "aim-lisa-basis-v1",
+            "denspart-lisa-basis-v1",
+        }:
             raise ValueError("Unsupported versioned LISA basis format.")
         raw_basis = raw_basis["elements"]
 

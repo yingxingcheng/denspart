@@ -94,13 +94,15 @@ def test_load_legacy_and_versioned_basis(tmp_path):
     np.testing.assert_allclose(initials, [0.75, 0.25])
 
     versioned = {
-        "format": "denspart-lisa-basis-v1",
+        "format": "aim-lisa-basis-v1",
         "metadata": {"method": "test"},
         "elements": {"1": {"orders": [2], "exponents": [1.0], "initials": [2.0]}},
     }
     exponents, initials = load_lisa_basis(versioned)[1]
     np.testing.assert_equal(exponents, [1.0])
     np.testing.assert_equal(initials, [1.0])
+    versioned["format"] = "denspart-lisa-basis-v1"
+    assert 1 in load_lisa_basis(versioned)
 
 
 @pytest.mark.parametrize(

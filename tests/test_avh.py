@@ -15,7 +15,7 @@ from denspart.cache import ComputeCache
 def make_avh_basis():
     """Return neutral and cationic normalized Gaussian shapes."""
     return {
-        "format": "denspart-avh-basis-v1",
+        "format": "aim-avh-gaussian-v1",
         "metadata": {"variant": "test"},
         "elements": {
             "2": {
@@ -64,6 +64,9 @@ def test_load_avh_basis_and_initial_model():
     assert model.charges == pytest.approx([0.0])
     model.assign_pars(np.zeros(2))
     np.testing.assert_allclose(model.get_cutoff_radii(1.0e-10), [0.0])
+    legacy = make_avh_basis()
+    legacy["format"] = "denspart-avh-basis-v1"
+    assert 2 in load_avh_basis(legacy)
 
 
 def test_avh_optimizer_and_roundtrip(tmp_path):

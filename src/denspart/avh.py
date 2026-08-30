@@ -23,7 +23,9 @@ __all__ = [
 
 def load_avh_basis(source):
     """Load normalized contracted state shapes from an AVH basis library."""
-    _, elements = _load_library(source, "denspart-avh-basis-v1")
+    _, elements = _load_library(
+        source, {"aim-avh-gaussian-v1", "denspart-avh-basis-v1"}
+    )
     result = {}
     for raw_atnum, element in elements.items():
         try:

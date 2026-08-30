@@ -23,8 +23,12 @@ def _load_library(source, expected_format):
             library = json.load(handle)
     else:
         library = source
-    if not isinstance(library, dict) or library.get("format") != expected_format:
-        raise ValueError(f"Expected a {expected_format} mapping.")
+    expected_formats = (
+        {expected_format} if isinstance(expected_format, str) else set(expected_format)
+    )
+    if not isinstance(library, dict) or library.get("format") not in expected_formats:
+        names = " or ".join(sorted(expected_formats))
+        raise ValueError(f"Expected a {names} mapping.")
     elements = library.get("elements")
     if not isinstance(elements, dict) or not elements:
         raise ValueError("The pro-atom basis contains no elements.")
@@ -69,7 +73,9 @@ def _validate_state_primitives(atnum, charge, state, key="primitives", normalize
 
 def load_proatom_states(source):
     """Load all Gaussian charge states from a state-preserving basis library."""
-    _, elements = _load_library(source, "denspart-proatom-basis-v2")
+    _, elements = _load_library(
+        source, {"aim-proatom-gaussian-v1", "denspart-proatom-basis-v2"}
+    )
     result = {}
     for raw_atnum, element in elements.items():
         try:
@@ -99,7 +105,7 @@ def load_proatom_states(source):
 def load_hirshfeld_basis(source):
     """Load fixed neutral Gaussian pro-atoms from a versioned basis library.
 
-    The state-resolved ``denspart-proatom-basis-v2`` layout is used so the same
+    The state-resolved ``aim-proatom-gaussian-v1`` layout is used so the same
     source data can later support charged-state Hirshfeld-I interpolation and AVH.
     Primitive populations are preserved: unlike LISA, they are not initial guesses.
     """

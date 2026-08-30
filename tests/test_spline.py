@@ -31,7 +31,7 @@ def make_spline_basis():
             density = np.zeros_like(radii)
         states.append({"charge": charge, "electrons": electrons, "density": density.tolist()})
     return {
-        "format": "denspart-spline-proatom-basis-v1",
+        "format": "aim-proatom-spline-v1",
         "metadata": {},
         "elements": {
             "1": {
@@ -59,9 +59,26 @@ def test_load_spline_basis_and_reject_bad_normalization():
     basis = make_spline_basis()
     states = load_spline_basis(basis)[1]
     assert [state[0] for state in states] == [-1, 0, 1]
+    legacy = make_spline_basis()
+    legacy["format"] = "denspart-spline-proatom-basis-v1"
+    assert 1 in load_spline_basis(legacy)
     basis["elements"]["1"]["states"][1]["density"][10] *= 2.0
     with pytest.raises(ValueError, match="integrates to"):
         load_spline_basis(basis)
+
+
+def test_avh_variant_selection_from_shared_library():
+    basis = make_spline_basis()
+    assert [state[0] for state in load_spline_basis(basis, "B")[1]] == [-1, 0]
+    assert [state[0] for state in load_spline_basis(basis, "M")[1]] == [0]
+    model = SplineProModel.from_geometry(
+        np.array([1]),
+        np.zeros((1, 3)),
+        basis,
+        method="AVH",
+        avh_variant="B",
+    )
+    assert [function.charge for function in model.fns] == [-1, 0]
 
 
 def test_shared_coefficients_and_roundtrip():

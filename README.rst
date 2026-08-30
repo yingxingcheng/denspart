@@ -67,7 +67,7 @@ MBIS is the default. Select LISA and, when needed, provide a Gaussian basis JSON
     denspart density.npz results-lisa.npz --method LISA --lisa-basis basis.json
 
 The custom basis may use HORTON-Part's ``{Z: [orders, exponents, initials]}`` layout or
-the versioned ``denspart-lisa-basis-v1`` layout. DensPart currently supports only
+the package-neutral ``aim-lisa-basis-v1`` layout. DensPart currently supports only
 order-two Gaussian LISA functions. Initial populations are normalized per element.
 The built-in basis includes H, Li, B--F, Si, P, S, Cl, Ga, and Br. The P and Ga
 functions were constructed from PBE/6-311+G(d,p) atomic densities over charge states
@@ -78,9 +78,9 @@ Gaussian-reference Hirshfeld requires a state-preserving pro-atom library:
 .. code-block:: bash
 
     denspart density.npz results-hirshfeld.npz --method HIRSHFELD \
-        --proatom-basis pbe-6311pgdp-proatoms.json
+        --proatom-basis basis/proatoms/pbe-6311pgdp-shg.json
 
-The input must use the ``denspart-proatom-basis-v2`` format. Conventional Hirshfeld selects
+The input uses the ``aim-proatom-gaussian-v1`` format. Conventional Hirshfeld selects
 the neutral state and fixes its Gaussian exponents and populations. Hirshfeld-I instead
 updates all atomic charges simultaneously and linearly interpolates adjacent integer-charge
 states until the charge change is below ``--gtol``:
@@ -88,7 +88,7 @@ states until the charge change is below ``--gtol``:
 .. code-block:: bash
 
     denspart density.npz results-hi.npz --method HIRSHFELD-I \
-        --proatom-basis pbe-6311pgdp-proatoms.json
+        --proatom-basis basis/proatoms/pbe-6311pgdp-shg.json
 
 AVH optimizes nonnegative populations of fixed, unit-integral atomic-state shapes with the
 extended KL objective and SciPy's SLSQP optimizer:
@@ -96,15 +96,27 @@ extended KL objective and SciPy's SLSQP optimizer:
 .. code-block:: bash
 
     denspart density.npz results-avh.npz --method AVH \
-        --avh-basis pbe-6311pgdp-avh-bound.json
+        --avh-basis basis/avh/bound/pbe-6311pgdp-shg.json
 
-AVH inputs use the ``denspart-avh-basis-v1`` format. All three methods also accept one shared
-``denspart-spline-proatom-basis-v1`` library containing the original spherical isolated-atom
+Gaussian AVH inputs use the ``aim-avh-gaussian-v1`` format. All three methods also accept one
+shared ``aim-proatom-spline-v1`` library containing the original spherical isolated-atom
 densities. DensPart evaluates them with cubic splines constrained to zero slope at the origin
 and clips negligible interpolation undershoots to zero. Hirshfeld fixes the neutral-state
 coefficient, Hirshfeld-I mixes adjacent integer states, and AVH optimizes all selected
 nonnegative state coefficients. Pass a spline library through ``--proatom-basis`` for
 Hirshfeld methods or ``--avh-basis`` for AVH.
+
+A complete spline pro-atom library can be shared without preselecting method-specific files:
+
+.. code-block:: bash
+
+    denspart density.npz results-avh.npz --method AVH \
+        --avh-basis basis/splines/proatoms/pbe-6311pgdp-shg-avh.json \
+        --avh-variant B
+
+The former ``denspart-*`` schema identifiers remain accepted for backward compatibility.
+The same ``aim-proatom-spline-v1`` file can also construct HORTON-Part's finite-system
+``ProAtomDB`` and can be used directly by its periodic API.
 
 These methods are distinct from GPAW's PAW-setup Hirshfeld implementation.
 

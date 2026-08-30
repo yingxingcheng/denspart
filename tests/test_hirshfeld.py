@@ -14,7 +14,7 @@ from denspart.lisa import DEFAULT_LISA_BASIS
 def make_basis():
     """Return a minimal state-preserving hydrogen library."""
     return {
-        "format": "denspart-proatom-basis-v2",
+        "format": "aim-proatom-gaussian-v1",
         "metadata": {},
         "elements": {
             "1": {
@@ -72,6 +72,9 @@ def test_load_fixed_neutral_state(tmp_path):
     exponents, populations = load_hirshfeld_basis(filename)[1]
     np.testing.assert_equal(exponents, [2.0, 0.5])
     np.testing.assert_equal(populations, [0.25, 0.75])
+    legacy = make_basis()
+    legacy["format"] = "denspart-proatom-basis-v2"
+    assert 1 in load_hirshfeld_basis(legacy)
 
 
 @pytest.mark.parametrize(

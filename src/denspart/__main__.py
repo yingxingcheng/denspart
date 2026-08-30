@@ -119,6 +119,7 @@ def main(args=None):
                 data["atcoords"],
                 basis=args.avh_basis,
                 method=args.method,
+                avh_variant=args.avh_variant,
             )
         else:
             pro_model_init = AVHProModel.from_geometry(
@@ -276,16 +277,22 @@ def parse_args(args=None):
     parser.add_argument(
         "--lisa-basis",
         help="JSON file containing Gaussian basis functions for LISA. "
-        "Both HORTON-Part and denspart-lisa-basis-v1 layouts are supported.",
+        "Both legacy HORTON-Part and aim-lisa-basis-v1 layouts are supported.",
     )
     parser.add_argument(
         "--proatom-basis",
-        help="State-resolved Gaussian or denspart-spline-proatom-basis-v1 JSON file. "
+        help="State-resolved Gaussian or aim-proatom-spline-v1 JSON file. "
         "HIRSHFELD selects the fixed neutral state; HIRSHFELD-I mixes adjacent states.",
     )
     parser.add_argument(
         "--avh-basis",
-        help="Gaussian denspart-avh-basis-v1 or radial-spline state library.",
+        help="Gaussian aim-avh-gaussian-v1 or radial-spline state library.",
+    )
+    parser.add_argument(
+        "--avh-variant",
+        choices=("A", "B", "M", "supplied", "a", "b", "m"),
+        default="supplied",
+        help="Select AVH-A/B/M states from a complete spline library, or use all supplied states.",
     )
     parser.add_argument(
         "--nocache",
